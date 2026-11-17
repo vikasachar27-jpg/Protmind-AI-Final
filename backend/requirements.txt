@@ -14,7 +14,7 @@ fpdf
 matplotlib
 numpy
 sqlalchemy
-passlib[bcrypt]
-bcrypt
+passlib==1.7.4
+bcrypt==4.0.1
 pyjwt
 google-generativeai
