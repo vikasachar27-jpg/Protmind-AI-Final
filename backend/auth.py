@@ -1,7 +1,7 @@
 """ProtMind AI - Authentication & SQL Database Layer
 SQLAlchemy ORM with SQLite database (protmind.db).
 User model with id, full_name, email (unique), and hashed_password.
-Security: Passlib (bcrypt) password hashing & PyJWT access token generation.
+Security: Passlib (pbkdf2_sha256) password hashing & PyJWT access token generation.
 CAPTCHA: Google reCAPTCHA v2 verification.
 """
 
@@ -129,10 +129,10 @@ def get_db():
                 pass
 
 
-# ----------------- Password Security (Passlib / Bcrypt) -----------------
+# ----------------- Password Security (Passlib pbkdf2_sha256) -----------------
 try:
     from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
     
     def hash_password(password: str) -> str:
         return pwd_context.hash(password)
