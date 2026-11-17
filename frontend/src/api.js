@@ -1,8 +1,12 @@
 // Thin client for the FastAPI backend (see backend/api.py).
 
+const PROD_BACKEND = "https://protmind-ai-final.onrender.com";
+
 function resolveApiBase() {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL.replace(/\/+$/, "");
+  const envUrl = (import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+  // Only accept a valid http(s) URL that does not point back to Netlify itself
+  if (envUrl && /^https?:\/\//i.test(envUrl) && !envUrl.includes("netlify.app")) {
+    return envUrl;
   }
   // When running locally in browser (e.g. localhost:5173), prioritize local backend on port 8000
   if (typeof window !== "undefined") {
@@ -11,7 +15,7 @@ function resolveApiBase() {
       return "http://localhost:8000";
     }
   }
-  return "https://protmind-ai-final.onrender.com";
+  return PROD_BACKEND;
 }
 
 let BASE = resolveApiBase();
@@ -19,7 +23,7 @@ const isLocalHost =
   typeof window !== "undefined" &&
   ["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(window.location.hostname);
 
-const FALLBACK_BASE = isLocalHost ? "https://protmind-ai-final.onrender.com" : null;
+const FALLBACK_BASE = isLocalHost ? PROD_BACKEND : null;
 
 async function parseErrorMessage(res, path) {
   let errMsg = `Server error (${res.status}) on ${path}`;
@@ -115,19 +119,14 @@ export async function predictStep9({ uniprotId = "P04637", mutation = "Y220C", s
     mutation: mutation,
     sequence: sequence
   };
-  if (isLocalHost) {
-    try {
-      const res = await fetch("http://127.0.0.1:8000/predict-step9", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // Fall through to postJson
+  try {
+    return await postJson("/predict-step9", payload);
+  } catch (err) {
+    if (err.message.includes("404")) {
+      return await postJson("/api/step9", payload);
     }
+    throw err;
   }
-  return await postJson("/predict-step9", payload);
 }
 
 export async function registerUser({ name, full_name, email, password, captcha_token }) {
