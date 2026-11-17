@@ -11,34 +11,39 @@ function resolveApiBase() {
       return "http://localhost:8000";
     }
   }
-  return "https://protmind-ai-react.onrender.com";
+  return "https://protmind-ai-final.onrender.com";
 }
 
 let BASE = resolveApiBase();
-const FALLBACK_BASE = (BASE.includes("localhost") || BASE.includes("127.0.0.1"))
-  ? "https://protmind-ai-react.onrender.com"
-  : "http://localhost:8000";
+const isLocalHost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(window.location.hostname);
+
+const FALLBACK_BASE = isLocalHost ? "https://protmind-ai-final.onrender.com" : null;
+
+async function parseErrorMessage(res, path) {
+  let errMsg = `Server error (${res.status}) on ${path}`;
+  try {
+    const errData = await res.json();
+    if (errData?.detail) {
+      errMsg = Array.isArray(errData.detail)
+        ? errData.detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
+        : String(errData.detail);
+    }
+  } catch {
+    // Response body wasn't JSON, keep default status message
+  }
+  return errMsg;
+}
 
 async function request(path, options) {
-  let url = `${BASE}${path}`;
+  const url = `${BASE}${path}`;
+  let res;
+
   try {
-    const res = await fetch(url, options);
-    // If primary server returns 404 on an upgraded endpoint, attempt fallback server
-    if (!res.ok && res.status === 404 && FALLBACK_BASE && BASE !== FALLBACK_BASE) {
-      try {
-        const altRes = await fetch(`${FALLBACK_BASE}${path}`, options);
-        if (altRes.ok) {
-          BASE = FALLBACK_BASE;
-          return altRes;
-        }
-      } catch {
-        // Fallback network failure, proceed to standard error
-      }
-    }
-    if (!res.ok) throw new Error(`Server error (${res.status}) on ${path}`);
-    return res;
+    res = await fetch(url, options);
   } catch (err) {
-    // If primary server failed to connect (e.g. local backend wasn't running), attempt fallback
+    // Only attempt localhost/Render fallback if a local dev fallback is configured
     if (FALLBACK_BASE && BASE !== FALLBACK_BASE) {
       try {
         const altRes = await fetch(`${FALLBACK_BASE}${path}`, options);
@@ -46,12 +51,34 @@ async function request(path, options) {
           BASE = FALLBACK_BASE;
           return altRes;
         }
-      } catch {
-        // Ignore fallback failure
+        throw new Error(await parseErrorMessage(altRes, path));
+      } catch (fallbackErr) {
+        if (!fallbackErr.message.includes("Failed to fetch")) {
+          throw fallbackErr;
+        }
       }
     }
     throw new Error(`Failed to reach backend (${err.message}) on ${path}`);
   }
+
+  // If primary server returns 404 on an upgraded endpoint and a fallback exists, try it
+  if (!res.ok && res.status === 404 && FALLBACK_BASE && BASE !== FALLBACK_BASE) {
+    try {
+      const altRes = await fetch(`${FALLBACK_BASE}${path}`, options);
+      if (altRes.ok) {
+        BASE = FALLBACK_BASE;
+        return altRes;
+      }
+    } catch {
+      // Ignore fallback network failure and report primary error below
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(await parseErrorMessage(res, path));
+  }
+
+  return res;
 }
 
 export async function postJson(path, payload) {
@@ -88,16 +115,17 @@ export async function predictStep9({ uniprotId = "P04637", mutation = "Y220C", s
     mutation: mutation,
     sequence: sequence
   };
-  // Primary call directly to http://127.0.0.1:8000/predict-step9 as per Step 9 architecture
-  try {
-    const res = await fetch("http://127.0.0.1:8000/predict-step9", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (res.ok) return await res.json();
-  } catch (err) {
-    // Fallback if needed
+  if (isLocalHost) {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/predict-step9", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // Fall through to postJson
+    }
   }
   return await postJson("/predict-step9", payload);
 }
@@ -112,11 +140,11 @@ export async function registerUser({ name, full_name, email, password, captcha_t
   try {
     return await postJson("/register", payload);
   } catch (err) {
-    try {
+    // Only retry /api/register if the route wasn't found (404), not on 400 validation errors
+    if (err.message.includes("404")) {
       return await postJson("/api/register", payload);
-    } catch {
-      throw err;
     }
+    throw err;
   }
 }
 
@@ -129,11 +157,10 @@ export async function loginUser({ email, password, captcha_token }) {
   try {
     return await postJson("/login", payload);
   } catch (err) {
-    try {
+    if (err.message.includes("404")) {
       return await postJson("/api/login", payload);
-    } catch {
-      throw err;
     }
+    throw err;
   }
 }
 
@@ -146,10 +173,9 @@ export async function sendChatMessage({ message, history = [], pipeline_data = {
   try {
     return await postJson("/chat-assistant", payload);
   } catch (err) {
-    try {
+    if (err.message.includes("404")) {
       return await postJson("/api/chat-assistant", payload);
-    } catch {
-      throw err;
     }
+    throw err;
   }
 }
