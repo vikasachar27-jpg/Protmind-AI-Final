@@ -66,7 +66,7 @@ try:
     from sqlalchemy import create_engine, Column, Integer, String
     from sqlalchemy.orm import declarative_base, sessionmaker, Session
     
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False,"timeout": 5})
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 
@@ -208,7 +208,7 @@ def verify_recaptcha(captcha_token: Optional[str]) -> bool:
         response = requests.post(
             RECAPTCHA_VERIFY_URL,
             data={"secret": RECAPTCHA_SECRET_KEY, "response": token},
-            timeout=5
+            timeout=3
         )
         result = response.json()
         if result.get("success", False):
